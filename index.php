@@ -11,27 +11,12 @@ while ($data = mysqli_fetch_assoc($fetchingElections)) {
     $startingDate = $data['starting_date'];
     $endingDate = $data['ending_date'];
 
-    if ($status === 'Active') {
-        // If election is Active and expired
-        $date1 = date_create($currentDate);
-        $date2 = date_create($endingDate);
-        $diff = date_diff($date1, $date2);
-
-        if ((int)$diff->format("%R%a") < 0) {
-            mysqli_query($db, "UPDATE elections SET status='Expired' WHERE id='" . $electionId . "'") or die(mysqli_error($db));
-        }
-    } else if ($status === 'InActive') {
-        // If election is Inactive and should be activated
-        $date1 = date_create($currentDate);
-        $date2 = date_create($startingDate);
-        $diff = date_diff($date1, $date2);
-
-        if ((int)$diff->format("%R%a") <= 0) {
-            mysqli_query($db, "UPDATE elections SET status='Active' WHERE id='" . $electionId . "'") or die(mysqli_error($db));
-        }
+    if ($status === 'Active' && strtotime($endingDate) < strtotime($currentDate)) {
+        mysqli_query($db, "UPDATE elections SET status='Expired' WHERE id='$electionId'") or die(mysqli_error($db));
+    } elseif ($status === 'InActive' && strtotime($startingDate) <= strtotime($currentDate)) {
+        mysqli_query($db, "UPDATE elections SET status='Active' WHERE id='$electionId'") or die(mysqli_error($db));
     }
 }
-
 ?>
 
 <!DOCTYPE html>
@@ -108,18 +93,6 @@ while ($data = mysqli_fetch_assoc($fetchingElections)) {
     </section>
     <?php endif; ?>
 
-    <?php
-    if (isset($_GET['registered'])) {
-        echo '<span class="bg-white text-success text-center my-3 mx-3">Your account has been created</span>';
-    } elseif (isset($_GET['invalid'])) {
-        echo '<span class="bg-white text-danger text-center my-3 mx-3">Password mismatch, Try Again</span>';
-    } elseif (isset($_GET['not_registered'])) {
-        echo '<span class="bg-white text-warning text-center my-3 mx-3">Sorry, You are not registered!</span>';
-    } elseif (isset($_GET['invalid_access'])) {
-        echo '<span class="bg-white text-danger text-center my-3 mx-3">Invalid Username or password</span>';
-    }
-    ?>
-
     <script src="assets/js/jquery.min.js"></script>
     <script src="assets/js/bootstrap.min.js"></script>
 </body>
@@ -133,12 +106,13 @@ if (isset($_POST['signup_button'])) {
     $signupRetypePassword = mysqli_real_escape_string($db, $_POST['signup_retype_password']);
     
     if ($signupPassword === $signupRetypePassword) {
-        mysqli_query($db, "INSERT INTO users (username, contact_no, password, user_role) VALUES ('$signupUsername', '$signupContact', '$signupPassword', 'user_role_placeholder')") or die(mysqli_error($db));
+        $hashedPassword = password_hash($signupPassword, PASSWORD_DEFAULT);
+        mysqli_query($db, "INSERT INTO users (username, contact_no, password, user_role) VALUES ('$signupUsername', '$signupContact', '$hashedPassword', 'user_role_placeholder')") or die(mysqli_error($db));
         echo "<script> location.assign('index.php?signup=1&registered=1');</script>";
     } else {
         echo "<script> location.assign('index.php?signup=1&invalid=1');</script>";
     }
-} elseif (isset($_POST["loginBtn"])) {
+}elseif (isset($_POST["loginBtn"])) {
     $contactNo = mysqli_real_escape_string($db, $_POST['contact_no']);
     $password = mysqli_real_escape_string($db, $_POST['password']);
     
@@ -146,13 +120,13 @@ if (isset($_POST['signup_button'])) {
     
     if (mysqli_num_rows($fetchingData) > 0) {
         $data = mysqli_fetch_assoc($fetchingData);
-        if ($contactNo === $data['contact_no'] && $password === $data['password']) {
+        if (password_verify($password, $data['password'])) {
             session_start();
             $_SESSION['user_role'] = $data['user_role'];
             $_SESSION['username'] = $data['username'];
             $_SESSION['user_id'] = $data['id'];
             
-            if ($data['user_role'] === "Admin") {
+            if ($data['user_role'] === "admin") {
                 $_SESSION['key'] = "AdminKey";
                 echo "<script>location.assign('admin/index.php?homepage=1');</script>";
             } else {
